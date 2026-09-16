@@ -4,7 +4,7 @@
    SEUL FICHIER À MODIFIER pour connecter la base Supabase.
    Supabase → Project Settings → API :
      • "Project URL"      → SUPABASE_URL
-     • "anon public" key  → SUPABASE_ANON_KEY
+     • "Publishable key" → SUPABASE_ANON_KEY
    La clé "anon public" peut être publique (la base est protégée par ses
    règles de sécurité). Ne JAMAIS coller ici la clé "service_role".
 
@@ -12,6 +12,6 @@
    uniquement, rien n'est partagé).
    =================================================================== */
 window.CARNET_CONFIG = {
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_URL: 'https://uudxoyvbgyyxgpczfozi.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_qsdxZ8cnCNoYn1zD7Gvz4w_ZO6GBe19', // clé publique « publishable » (protégée par la RLS)
 };
