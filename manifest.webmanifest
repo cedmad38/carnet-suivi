@@ -1,0 +1,9 @@
+{
+  "name": "Carnet de suivi",
+  "short_name": "Carnet",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f2ec",
+  "theme_color": "#2f6b6f",
+  "lang": "fr"
+}
