@@ -161,6 +161,33 @@ legend { font-weight: 600; padding: 0 6px; }
 }
 #toast.show { opacity: 1; }
 
+/* ---------- Téléphone ---------- */
+.tab-icon, .tab-short { display: none; }
+input, select, textarea, .chip-new { font-size: 16px !important; } /* évite le zoom automatique d'iPhone */
+@media (max-width: 760px) {
+  .topbar { padding-bottom: 10px; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; margin: 0; z-index: 30; max-width: none;
+    background: var(--card); border-top: 1px solid var(--line); gap: 0; overflow: visible;
+    padding: 4px 2px max(4px, env(safe-area-inset-bottom));
+  }
+  .tab {
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px;
+    padding: 5px 0 4px; border-radius: 10px; border-bottom: 0; font-size: 10.5px; line-height: 1.1;
+  }
+  .tab-long { display: none; }
+  .tab-icon { display: block; font-size: 20px; line-height: 1.2; filter: grayscale(1); opacity: .7; }
+  .tab-short { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .tab[aria-current="page"] { background: var(--primary-soft); }
+  .tab[aria-current="page"] .tab-icon { filter: none; opacity: 1; }
+  main { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+  .fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  #toast { bottom: calc(140px + env(safe-area-inset-bottom)); }
+  .card { padding: 14px; }
+  h2 { font-size: 1.15rem; }
+  .chip { min-height: 40px; }
+}
+
 /* ---------- Impression ---------- */
 #printArea { display: none; }
 @media print {

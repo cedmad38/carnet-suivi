@@ -37,8 +37,9 @@
   const DEFAULT_SIGNS = ['Changement du regard', 'Agitation', 'Gestes répétitifs', 'Recherche d’obscurité',
     'Augmentation des demandes', 'Se tape la tête', 'Voix modifiée'];
   const DEFAULT_REGUL = ['Espace calme ou sombre', 'Faire une pause', 'Vibration', 'Sentir une odeur appréciée', 'Écouter quelque chose'];
-  const TABS = [['jour', 'Aujourd’hui'], ['episodes', 'Épisodes'], ['sensoriel', 'Sensoriel'], ['changements', 'Changements'],
-    ['essais', 'Essais'], ['bilan', 'Bilan'], ['reglages', 'Réglages']];
+  // [clé, libellé, libellé court (téléphone), icône]
+  const TABS = [['jour', 'Aujourd’hui', 'Jour', '📅'], ['episodes', 'Épisodes', 'Épisodes', '⚠️'], ['sensoriel', 'Sensoriel', 'Sensoriel', '🌸'],
+    ['changements', 'Changements', 'Agenda', '🗓️'], ['essais', 'Essais', 'Essais', '🧪'], ['bilan', 'Bilan', 'Bilan', '📊'], ['reglages', 'Réglages', 'Réglages', '⚙️']];
   const ROLES = [['famille', 'Famille'], ['pro', 'Professionnel(le)'], ['admin', 'Administrateur']];
 
   const label = (list, v) => (list.find(x => x[0] === v) || [, v || ''])[1];
@@ -253,7 +254,7 @@
           <div class="brand">Carnet de ${esc(PRENOM)}<small>${esc(S.member.display_name)}${S.requests.length ? ` · <b style="color:var(--warn)">${S.requests.length} demande(s) d’accès</b>` : ''}</small></div>
           ${Store.online ? '<button class="btn sm" id="logout">Déconnexion</button>' : ''}
         </div>
-        <nav class="tabs" aria-label="Rubriques">${TABS.map(([k, l]) => `<button class="tab" data-tab="${k}">${l}</button>`).join('')}</nav>
+        <nav class="tabs" aria-label="Rubriques">${TABS.map(([k, l, short, icon]) => `<button class="tab" data-tab="${k}" aria-label="${l}"><span class="tab-icon" aria-hidden="true">${icon}</span><span class="tab-long">${l}</span><span class="tab-short" aria-hidden="true">${short}</span></button>`).join('')}</nav>
       </header>
       <main id="main"></main>
       <button class="fab" id="fab" aria-label="Noter un épisode maintenant">+ Épisode</button>`;
