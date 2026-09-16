@@ -10,7 +10,21 @@
     const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true },
     });
-    const must = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
+    const must = ({ data, error }) => { if (error) throw new Error(fr(error.message)); return data; };
+    // Messages d'erreur Supabase les plus courants, traduits.
+    function fr(msg = '') {
+      const table = [
+        [/Invalid login credentials/i, 'Email ou mot de passe incorrect.'],
+        [/Email not confirmed/i, 'Email pas encore confirmé : clique sur le lien reçu par email (pense aux courriers indésirables).'],
+        [/User already registered/i, 'Un compte existe déjà avec cet email. Utilise « J’ai déjà un compte ».'],
+        [/Password should be at least/i, 'Le mot de passe doit faire au moins 8 caractères.'],
+        [/rate limit|too many/i, 'Trop de tentatives ou d’emails envoyés. Réessaie dans une heure.'],
+        [/Unable to validate email|invalid format/i, 'Adresse email invalide.'],
+        [/Failed to fetch|NetworkError/i, 'Pas de connexion internet.'],
+      ];
+      const hit = table.find(([re]) => re.test(msg));
+      return hit ? hit[1] : msg;
+    }
 
     return {
       online: true,
@@ -21,20 +35,20 @@
       onAuthChange(fn) { sb.auth.onAuthStateChange((event, s) => fn(s ? { id: s.user.id, email: s.user.email } : null, event)); },
       async signIn(email, password) {
         const { error } = await sb.auth.signInWithPassword({ email, password });
-        if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Email ou mot de passe incorrect.' : error.message);
+        if (error) throw new Error(fr(error.message));
       },
       async signUp(email, password, displayName) {
         const { data, error } = await sb.auth.signUp({ email, password, options: { data: { display_name: displayName } } });
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(fr(error.message));
         return { needsConfirmation: !data.session };
       },
       async resetPassword(email) {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(fr(error.message));
       },
       async updatePassword(password) {
         const { error } = await sb.auth.updateUser({ password });
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(fr(error.message));
       },
       async signOut() { await sb.auth.signOut(); },
       async myMembership(uid) {
