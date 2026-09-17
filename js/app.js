@@ -283,6 +283,9 @@
   function renderMain() {
     S.stale = false;
     $$('.tab').forEach(t => { if (t.dataset.tab === S.tab) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); });
+    // Le bouton « + Épisode » masquerait les boutons de Réglages et du Bilan.
+    const fab = $('#fab');
+    if (fab) fab.hidden = ['reglages', 'bilan'].includes(S.tab);
     const views = { jour: viewDay, episodes: viewEpisodes, sensoriel: viewSensory, changements: viewChanges, essais: viewTrials, bilan: viewBilan, reglages: viewSettings };
     views[S.tab]();
   }
