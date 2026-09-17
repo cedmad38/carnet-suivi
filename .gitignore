@@ -2,3 +2,4 @@
 *.json.bak
 carnet-*.json
 JOURNAL.md
+_backups/
