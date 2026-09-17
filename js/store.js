@@ -7,8 +7,21 @@
 
   /* ---------------------------- En ligne ---------------------------- */
   function onlineStore() {
+    // « Rester connecté » : session gardée dans localStorage (survit à la fermeture),
+    // sinon dans sessionStorage (effacée à la fermeture de l'onglet / de l'app).
+    const REMEMBER = 'carnet-remember';
+    const safe = fn => { try { return fn(); } catch { return null; } };
+    const remember = () => safe(() => localStorage.getItem(REMEMBER)) !== '0';
+    const storage = {
+      getItem: k => safe(() => localStorage.getItem(k)) ?? safe(() => sessionStorage.getItem(k)),
+      setItem: (k, v) => {
+        if (remember()) { safe(() => localStorage.setItem(k, v)); safe(() => sessionStorage.removeItem(k)); }
+        else { safe(() => sessionStorage.setItem(k, v)); safe(() => localStorage.removeItem(k)); }
+      },
+      removeItem: k => { safe(() => localStorage.removeItem(k)); safe(() => sessionStorage.removeItem(k)); },
+    };
     const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: { persistSession: true, autoRefreshToken: true, storage },
     });
     const must = ({ data, error }) => { if (error) throw new Error(fr(error.message)); return data; };
     // Messages d'erreur Supabase les plus courants, traduits.
@@ -32,7 +45,10 @@
         const { data } = await sb.auth.getSession();
         return data.session ? { id: data.session.user.id, email: data.session.user.email } : null;
       },
-      onAuthChange(fn) { sb.auth.onAuthStateChange((event, s) => fn(s ? { id: s.user.id, email: s.user.email } : null, event)); },
+      // setTimeout : ne jamais appeler Supabase directement dans ce rappel (blocage connu de supabase-js).
+      onAuthChange(fn) { sb.auth.onAuthStateChange((event, s) => setTimeout(() => fn(s ? { id: s.user.id, email: s.user.email } : null, event), 0)); },
+      remembered: remember,
+      setRemember(on) { safe(() => localStorage.setItem(REMEMBER, on ? '1' : '0')); },
       async signIn(email, password) {
         const { error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw new Error(fr(error.message));
@@ -93,6 +109,7 @@
       online: false,
       async session() { return me; },
       onAuthChange() {},
+      remembered: () => true, setRemember() {},
       async signIn() {}, async signUp() { return {}; }, async resetPassword() {}, async updatePassword() {},
       async signOut() {},
       async myMembership() { return member; },

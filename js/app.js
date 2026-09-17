@@ -205,6 +205,7 @@
           ${v === 'signup' ? '<label class="field"><span>Prénom (affiché aux autres)</span><input type="text" name="name" required autocomplete="given-name"></label>' : ''}
           ${v !== 'recovery' ? '<label class="field"><span>Email</span><input type="email" name="email" required autocomplete="email"></label>' : ''}
           ${v !== 'forgot' ? `<label class="field"><span>Mot de passe</span><input type="password" name="password" required minlength="8" autocomplete="${v === 'login' ? 'current-password' : 'new-password'}"></label>` : ''}
+          ${v === 'login' || v === 'signup' ? `<label class="row remember"><input type="checkbox" name="remember" ${Store.remembered() ? 'checked' : ''}> Rester connecté sur cet appareil</label>` : ''}
           <div id="authMsg" class="small" role="alert"></div>
           <button class="btn primary" type="submit">${{ login: 'Se connecter', signup: 'Créer le compte', forgot: 'Recevoir un lien', recovery: 'Enregistrer' }[v]}</button>
           <div class="row small">
@@ -218,6 +219,7 @@
       ev.preventDefault();
       const f = readForm(ev.target), msg = $('#authMsg'), btn = $('button[type=submit]', ev.target);
       btn.disabled = true; msg.textContent = '';
+      if (v === 'login' || v === 'signup') Store.setRemember(f.remember);
       try {
         if (v === 'login') await Store.signIn(f.email, f.password);
         if (v === 'signup') {

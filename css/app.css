@@ -140,6 +140,8 @@ th { font-weight: 600; color: var(--muted); font-size: .82rem; }
 /* ---------- Connexion ---------- */
 .auth { max-width: 420px; margin: 8vh auto; padding: 0 16px; }
 .auth h1 { font-size: 1.5rem; margin-bottom: 4px; }
+.remember { font-size: .95rem; cursor: pointer; }
+.remember input { width: 22px; height: 22px; accent-color: var(--primary); }
 
 /* ---------- Fenêtre ---------- */
 dialog {
