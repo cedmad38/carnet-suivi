@@ -1,6 +1,6 @@
 {
-  "name": "Carnet de suivi",
-  "short_name": "Carnet",
+  "name": "Suivi Gaby",
+  "short_name": "Suivi Gaby",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f5f2ec",
