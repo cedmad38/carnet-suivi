@@ -34,6 +34,8 @@
         [/rate limit|too many/i, 'Trop de tentatives ou d’emails envoyés. Réessaie dans une heure.'],
         [/Unable to validate email|invalid format/i, 'Adresse email invalide.'],
         [/Failed to fetch|NetworkError/i, 'Pas de connexion internet.'],
+        [/Bucket not found/i, 'Le rangement des photos n’est pas encore activé dans la base (à faire une fois dans Supabase).'],
+        [/exceeded the maximum allowed size|Payload too large/i, 'Image trop lourde (10 Mo maximum).'],
       ];
       const hit = table.find(([re]) => re.test(msg));
       return hit ? hit[1] : msg;
@@ -89,6 +91,14 @@
         return Object.fromEntries(rows.map(r => [r.key, r.data]));
       },
       async saveSetting(key, data) { must(await sb.from('settings').upsert({ key, data })); },
+      // Fichiers privés (planche de la professionnelle…) : bucket « documents » réservé aux membres.
+      async uploadDoc(path, file) { must(await sb.storage.from('documents').upload(path, file, { upsert: true, contentType: file.type })); },
+      async removeDoc(path) { await sb.storage.from('documents').remove([path]); },
+      async docUrl(path) {
+        const { data, error } = await sb.storage.from('documents').createSignedUrl(path, 3600);
+        if (error) throw new Error(fr(error.message));
+        return data.signedUrl;
+      },
       subscribe(fn) {
         sb.channel('entries').on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, fn).subscribe();
       },
@@ -134,6 +144,13 @@
       async remove(id) { db.entries = db.entries.filter(e => e.id !== id); persist(); },
       async settings() { return db.settings; },
       async saveSetting(key, data) { db.settings[key] = data; persist(); },
+      async uploadDoc(path, file) {
+        db.docs = db.docs || {};
+        db.docs[path] = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(file); });
+        persist();
+      },
+      async removeDoc(path) { if (db.docs) delete db.docs[path]; persist(); },
+      async docUrl(path) { return (db.docs || {})[path] || ''; },
       subscribe() {},
     };
   }

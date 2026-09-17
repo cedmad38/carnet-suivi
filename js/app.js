@@ -36,7 +36,12 @@
   ];
   const DEFAULT_SIGNS = ['Changement du regard', 'Agitation', 'Gestes répétitifs', 'Recherche d’obscurité',
     'Augmentation des demandes', 'Se tape la tête', 'Voix modifiée'];
-  const DEFAULT_REGUL = ['Espace calme ou sombre', 'Faire une pause', 'Vibration', 'Sentir une odeur appréciée', 'Écouter quelque chose'];
+  // Cases de la planche « De quoi ai-je besoin ? » fournie par la professionnelle.
+  const DEFAULT_REGUL = ['Boire', 'Toilettes', 'Pause', 'Objet à toucher', 'Couverture', 'Casque anti-bruit', 'Mon planning',
+    'Aide-moi', 'M’isoler', 'Sentir', 'Musique'];
+  const DEFAULT_SUBS = { 'Mon planning': 'Je veux savoir ce qui va se passer', 'M’isoler': 'Salle calme', 'Sentir': 'Mon tube odorant', 'Musique': 'Écouter de la musique' };
+  const TLA_VERSION = 2;
+  const CA_NE_VA_PAS = 'Ça ne va pas';
   // [clé, libellé, libellé court (téléphone), icône]
   const TABS = [['jour', 'Aujourd’hui', 'Jour', '📅'], ['episodes', 'Épisodes', 'Épisodes', '⚠️'], ['sensoriel', 'Sensoriel', 'Sensoriel', '🌸'],
     ['changements', 'Changements', 'Agenda', '🗓️'], ['essais', 'Essais', 'Essais', '🧪'], ['bilan', 'Bilan', 'Bilan', '📊'], ['reglages', 'Réglages', 'Réglages', '⚙️']];
@@ -53,6 +58,7 @@
   };
   const signs = () => S.settings.signs || DEFAULT_SIGNS;
   const regul = () => S.settings.regul || DEFAULT_REGUL;
+  const subs = () => S.settings.soustitres || DEFAULT_SUBS;
   const measures = () => uniq([...BASE_MEASURES, ...regul()]);
 
   /* ============================ Utilitaires ============================ */
@@ -132,6 +138,15 @@
     const [entries, settings, members] = await Promise.all([Store.entries(), Store.settings(), Store.members()]);
     S.entries = entries; S.settings = settings; S.members = members;
     if (settings.prenom) PRENOM = settings.prenom;
+    // Une seule fois : aligner les activités sur la planche de la professionnelle.
+    if ((settings.tlaVersion || 0) < TLA_VERSION) {
+      try {
+        await Store.saveSetting('regul', DEFAULT_REGUL);
+        await Store.saveSetting('soustitres', DEFAULT_SUBS);
+        await Store.saveSetting('tlaVersion', TLA_VERSION);
+        Object.assign(S.settings, { regul: DEFAULT_REGUL, soustitres: DEFAULT_SUBS, tlaVersion: TLA_VERSION });
+      } catch { /* réessayé au prochain chargement */ }
+    }
     if (isAdmin()) S.requests = await Store.requests();
   }
   async function saveEntry(entry) {
@@ -386,6 +401,7 @@
       ${d.contexte?.length || d.contexteTxt ? `<p class="kv"><b>Contexte :</b> ${esc([...(d.contexte || []), d.contexteTxt].filter(Boolean).join(', '))}</p>` : ''}
       ${d.signes?.length ? `<p class="kv"><b>Signes :</b> ${esc(d.signes.join(', '))}</p>` : ''}
       ${d.mesures?.length ? `<p class="kv"><b>Mesures :</b> ${esc(d.mesures.join(', '))}${d.delai ? ` · effet en ${esc(d.delai)} min` : ''}</p>` : ''}
+      ${d.montre?.length ? `<p class="kv"><b>A montré sur sa planche :</b> ${esc(d.montre.join(', '))}</p>` : ''}
       ${d.evitee ? `<p class="kv"><b>Crise évitée :</b> ${esc(label(YESNO, d.evitee))}</p>` : ''}
       ${d.notes ? `<p class="kv">${esc(d.notes)}</p>` : ''}
     </article>`;
@@ -409,12 +425,14 @@
       </div>
       <div><span class="field-label">Crise évitée ?</span>${seg('evitee', YESNO, d.evitee)}</div>
       <div><span class="field-label">${esc(PRENOM)} a signalé son mal-être lui-même (picto, TLA…) ?</span>${seg('signale', YESNO, d.signale)}</div>
+      <div><span class="field-label">Qu’a-t-il montré sur sa planche « De quoi ai-je besoin ? » ?</span>${multi('montre', [CA_NE_VA_PAS, ...regul()], d.montre || [], false)}</div>
       <label class="field"><span>Notes</span><textarea name="notes" rows="3">${esc(d.notes)}</textarea></label>
       <p class="muted small">Pendant les signes de pré-crise : peu de paroles, présenter le pictogramme et le TLA, laisser de l’espace. Pas de massage ni d’approche physique rapprochée.</p>`;
     openModal(entry ? 'Épisode' : 'Nouvel épisode', body, {
       onSave: async form => {
         const f = readForm(form);
         if (!f.type) { toast('Choisis le type d’épisode'); return false; }
+        if ((f.montre || []).includes(CA_NE_VA_PAS) && !f.signale) f.signale = 'oui';
         const { date: dt, ...data } = f;
         await saveEntry({ id: entry?.id, kind: 'episode', date: dt, data });
         // Un nouveau signe observé rejoint la liste des signes de pré-crise propres à l'enfant.
@@ -742,6 +760,15 @@
       measures: Object.entries(measureStats).sort((a, b) => b[1].n - a[1].n),
       avoided: precrise.filter(e => e.data.evitee === 'oui').length, precriseRated: precrise.filter(e => e.data.evitee).length,
       selfReport: eps.filter(e => e.data.signale === 'oui').length,
+      board: (() => {
+        const counts = {};
+        eps.forEach(e => (e.data.montre || []).forEach(m => { counts[m] = (counts[m] || 0) + 1; }));
+        const tense = eps.filter(e => ['precrise', 'crise'].includes(e.data.type) && e.data.evitee);
+        const shown = tense.filter(e => (e.data.montre || []).includes(CA_NE_VA_PAS));
+        const notShown = tense.filter(e => !(e.data.montre || []).includes(CA_NE_VA_PAS));
+        const rate = list => list.length ? pct(list.filter(e => e.data.evitee === 'oui').length, list.length) + ' %' : '—';
+        return { counts: Object.entries(counts).sort((a, b) => b[1] - a[1]), shown: shown.length, notShown: notShown.length, rateShown: rate(shown), rateNotShown: rate(notShown) };
+      })(),
       avgTension: days.filter(d => d.data.tension).length ? days.reduce((n, d) => n + (+d.data.tension || 0), 0) / days.filter(d => d.data.tension).length : null,
       optifibre: days.filter(d => d.data.optifibre === 'oui').length,
     };
@@ -781,6 +808,14 @@
         </section>
 
         <section class="card">
+          <h3>Planche « De quoi ai-je besoin ? »</h3>
+          ${b.board.counts.length ? `<div class="table-wrap"><table><thead><tr><th>Case montrée</th><th>Nombre de fois</th></tr></thead><tbody>
+          ${b.board.counts.map(([m, n]) => `<tr><td>${m === CA_NE_VA_PAS ? '<b>Ça ne va pas</b>' : esc(m)}</td><td>${n}</td></tr>`).join('')}</tbody></table></div>
+          <p class="small">Crise évitée quand « Ça ne va pas » a été montré : <b>${b.board.rateShown}</b> (${b.board.shown} épisode(s)) · sans : <b>${b.board.rateNotShown}</b> (${b.board.notShown} épisode(s)).</p>`
+          : '<div class="empty">Aucune case notée sur la période.</div>'}
+        </section>
+
+        <section class="card">
           <h3>Épisodes par type</h3>
           <p>${EP_TYPES.map(([k, l]) => `${esc(l)} : <b>${b.byType[k]}</b>`).join(' · ')}</p>
         </section>
@@ -803,7 +838,7 @@
             <td>${fmtDate(e.date)}${d.heure ? '<br>' + esc(d.heure) : ''}</td><td>${esc(label(EP_TYPES, d.type))}</td>
             <td>${esc([...(d.contexte || []), d.contexteTxt].filter(Boolean).join(', '))}</td><td>${esc((d.signes || []).join(', '))}</td>
             <td>${esc((d.mesures || []).join(', '))}</td><td>${esc(label(EFFECTS, d.effet))}${d.delai ? ` (${esc(d.delai)} min)` : ''}${d.evitee === 'oui' ? '<br>crise évitée' : ''}</td>
-            <td>${esc(d.notes)}</td></tr>`; }).join('')}
+            <td>${d.montre?.length ? '<b>Planche :</b> ' + esc(d.montre.join(', ')) + '<br>' : ''}${esc(d.notes)}</td></tr>`; }).join('')}
           </tbody></table></div>` : '<div class="empty">Aucun épisode sur la période.</div>'}
         </section>
         ${forPrint ? `<p class="small muted">Document généré le ${fmtDate(todayISO(), true)} à partir du carnet de suivi partagé.</p>` : ''}
@@ -833,14 +868,72 @@
     $$('#main [data-edit], #main [data-followup]').forEach(x => x.classList.add('no-print'));
     bindEntryButtons($('#main'));
   }
-  function printHTML(html) {
+  async function printHTML(html, { landscape = false } = {}) {
     const area = $('#printArea');
     area.innerHTML = html;
     $$('button', area).forEach(b => b.remove());
+    // Attendre le chargement des pictogrammes avant d'ouvrir l'impression.
+    await Promise.all($$('img', area).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
     document.body.classList.add('printing');
-    const done = () => { document.body.classList.remove('printing'); area.innerHTML = ''; window.removeEventListener('afterprint', done); };
+    let page = null;
+    if (landscape) { page = document.createElement('style'); page.textContent = '@page { size: A4 landscape; margin: 10mm; }'; document.head.appendChild(page); }
+    const done = () => { document.body.classList.remove('printing'); area.innerHTML = ''; page?.remove(); window.removeEventListener('afterprint', done); };
     window.addEventListener('afterprint', done);
     setTimeout(() => window.print(), 50);
+  }
+
+  /* ======================= PICTOGRAMMES ARASAAC ======================= */
+  const ARASAAC_CREDIT = 'Pictogrammes ARASAAC (arasaac.org), auteur Sergio Palao — © Gouvernement d’Aragon, Espagne — Licence CC BY-NC-SA 4.0';
+  const ALERTE = '__alerte__';
+  const pictoUrl = (id, size = 300) => `https://static.arasaac.org/pictograms/${id}/${id}_${size}.png`;
+  const pictos = () => S.settings.pictos || {};
+  const tlaRows = () => [[ALERTE, 'Ça ne va pas'], ...regul().map(r => [r, r])];
+  async function searchArasaac(q) {
+    const get = async term => {
+      const r = await fetch(`https://api.arasaac.org/v1/pictograms/fr/search/${encodeURIComponent(term)}`);
+      return r.ok ? r.json() : [];
+    };
+    let res = await get(q);
+    if (!res.length) {
+      // Phrase introuvable : on retente avec le mot le plus long (« Espace calme ou sombre » → « espace »).
+      const word = q.split(/[\s’']+/).sort((a, b) => b.length - a.length)[0];
+      if (word && word !== q) res = await get(word);
+    }
+    return res.slice(0, 40);
+  }
+  function openPictoPicker(key, labelText) {
+    const current = pictos()[key];
+    const body = `
+      <div class="row"><input type="text" id="pictoQuery" value="${esc(key === ALERTE ? 'mal' : labelText)}" style="flex:1;min-width:160px" aria-label="Rechercher un pictogramme"><button class="btn primary sm" type="button" id="pictoGo">Rechercher</button></div>
+      <div id="pictoResults" class="picto-grid"><div class="empty">Recherche…</div></div>
+      ${current ? '<button type="button" class="btn danger sm" id="pictoClear">Retirer le pictogramme actuel</button>' : ''}
+      <p class="muted small">${esc(ARASAAC_CREDIT)}</p>`;
+    const form = openModal(`Pictogramme : ${labelText}`, body);
+    const choose = async id => {
+      await saveSetting('pictos', { ...pictos(), [key]: id });
+      $('#modal').close();
+      toast('Pictogramme enregistré');
+    };
+    const run = async q => {
+      const box = $('#pictoResults', form);
+      box.innerHTML = '<div class="empty">Recherche…</div>';
+      try {
+        const res = await searchArasaac(q.trim());
+        box.innerHTML = res.length ? res.map(p => `<button type="button" class="picto-choice${p._id === current ? ' on' : ''}" data-pid="${p._id}" aria-label="${esc(p.keywords?.[0]?.keyword || 'pictogramme')}">
+            <img src="${pictoUrl(p._id)}" alt="" loading="lazy"><span>${esc(p.keywords?.[0]?.keyword || '')}</span></button>`).join('')
+          : '<div class="empty">Aucun pictogramme trouvé. Essaie un autre mot (ex. calme, pause, musique, odeur).</div>';
+        $$('[data-pid]', box).forEach(b => b.onclick = () => choose(+b.dataset.pid));
+      } catch { box.innerHTML = '<div class="empty">Recherche impossible (connexion internet ?).</div>'; }
+    };
+    const input = $('#pictoQuery', form);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); run(input.value); } });
+    $('#pictoGo', form).onclick = () => run(input.value);
+    if ($('#pictoClear', form)) $('#pictoClear', form).onclick = async () => {
+      const next = { ...pictos() }; delete next[key];
+      await saveSetting('pictos', next);
+      $('#modal').close();
+    };
+    run(input.value);
   }
 
   /* ============================== RÉGLAGES ============================== */
@@ -884,9 +977,19 @@
         ${listEditor('signs', `Signes de pré-crise propres à ${esc(PRENOM)}`, 'Proposés en cases à cocher dans chaque épisode. À compléter au fil des observations.', signs())}
         ${listEditor('regul', 'Activités de régulation (TLA)', 'Panel réduit d’activités connues et apaisantes, qu’il peut choisir lui-même. Elles apparaissent aussi dans les mesures.', regul())}
         <section class="card">
-          <h3>Imprimer le TLA</h3>
-          <p class="muted small">Une planche avec « Ça ne va pas » et les activités de régulation ci-dessus, à découper ou plastifier. Tu peux remplacer les symboles par les pictogrammes habituels de ${esc(PRENOM)}.</p>
-          <button class="btn" id="printTla">Imprimer la planche</button>
+          <h3>Planche de la professionnelle</h3>
+          <p class="muted small">La planche officielle « De quoi ai-je besoin ? ». Rangée dans l’espace protégé du carnet, visible uniquement par les membres.</p>
+          <div id="plancheBox">${S.settings.planche ? '<div class="empty">Chargement de la planche…</div>' : '<div class="empty">Aucune planche ajoutée.</div>'}</div>
+          <label class="btn" style="margin-top:10px">${S.settings.planche ? 'Remplacer la photo' : 'Ajouter la photo de la planche'}<input type="file" id="plancheFile" accept="image/*" hidden></label>
+        </section>
+        <section class="card">
+          <h3>Planche de secours à imprimer</h3>
+          <p class="muted small">Même présentation que la planche officielle (« Ça ne va pas » en rouge, 4 colonnes). Utile si l’originale est abîmée ou oubliée. Pictogramme ARASAAC au choix pour chaque case.</p>
+          <ul class="listedit">${tlaRows().map(([key, lab], i) => `<li>
+            <span class="row" style="flex-wrap:nowrap">${pictos()[key] ? `<img class="picto-thumb" src="${pictoUrl(pictos()[key], 300)}" alt="">` : '<span class="picto-thumb empty-thumb" aria-hidden="true">?</span>'}<span>${key === ALERTE ? '<b>Ça ne va pas</b>' : esc(lab)}${subs()[lab] ? `<br><span class="muted small">${esc(subs()[lab])}</span>` : ''}</span></span>
+            <button class="btn sm" data-picto="${i}">${pictos()[key] ? 'Changer' : 'Choisir un picto'}</button></li>`).join('')}</ul>
+          <button class="btn primary" id="printTla">Imprimer la planche</button>
+          <p class="muted small" style="margin-top:10px">${esc(ARASAAC_CREDIT)}</p>
         </section>
         <section class="card">
           <h3>Sauvegarde</h3>
@@ -923,11 +1026,38 @@
       const v = $('input', ev.target).value.trim();
       if (v) adminAction(() => Store.rename(S.user.id, v), 'Nom modifié');
     };
+    $$('[data-picto]').forEach(b => b.onclick = () => { const [key, lab] = tlaRows()[+b.dataset.picto]; openPictoPicker(key, lab); });
     $('#printTla').onclick = () => {
-      const icons = ['🌙', '⏸️', '〰️', '🌸', '🎧', '⭐', '⭐', '⭐'];
-      printHTML(`<h2 style="margin-bottom:8mm">TLA de ${esc(PRENOM)}</h2><div class="tla">
-        <div class="alerte"><span>😣</span>Ça ne va pas</div>
-        ${regul().map((r, i) => `<div><span>${icons[i] || '⭐'}</span>${esc(r)}</div>`).join('')}</div>`);
+      const sad = '<svg class="sad" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="7"/><circle cx="35" cy="40" r="6" fill="currentColor"/><circle cx="65" cy="40" r="6" fill="currentColor"/><path d="M30 74 Q50 56 70 74" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg>';
+      const cell = ([key, lab]) => {
+        const id = pictos()[key];
+        const visual = id ? `<img src="${pictoUrl(id, 500)}" alt="">` : (key === ALERTE ? sad : '');
+        return `<div class="${key === ALERTE ? 'alerte' : ''}">${visual}<b>${esc(lab)}</b>${subs()[lab] ? `<small>${esc(subs()[lab])}</small>` : ''}</div>`;
+      };
+      // « Ça ne va pas » en première case de la dernière ligne, comme sur la planche originale.
+      const rows = tlaRows().slice(1);
+      rows.splice(Math.max(0, rows.length - 3), 0, tlaRows()[0]);
+      printHTML(`<h1 class="tla-title">De quoi ai-je besoin ?</h1><div class="tla">${rows.map(cell).join('')}</div>
+        <p class="tla-credit">${esc(ARASAAC_CREDIT)}</p>`, { landscape: true });
+    };
+    if (S.settings.planche) Store.docUrl(S.settings.planche.path).then(url => {
+      const box = $('#plancheBox');
+      if (box && url) box.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="Planche De quoi ai-je besoin" class="planche-img"></a>`;
+    }).catch(err => { const box = $('#plancheBox'); if (box) box.innerHTML = `<div class="alert">${esc(err.message)}</div>`; });
+    $('#plancheFile').onchange = async ev => {
+      const file = ev.target.files[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) { toast('Image trop lourde (10 Mo maximum).'); return; }
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const path = `planche/planche-${Date.now()}.${ext}`;
+      toast('Envoi de la photo…');
+      try {
+        await Store.uploadDoc(path, file);
+        const old = S.settings.planche?.path;
+        await saveSetting('planche', { path, at: new Date().toISOString() });
+        if (old && old !== path) Store.removeDoc(old);
+        toast('Planche enregistrée');
+      } catch (err) { toast('Erreur : ' + err.message); }
     };
     $('#export').onclick = () => {
       const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), members: S.members, settings: S.settings, entries: S.entries }, null, 2)], { type: 'application/json' });
