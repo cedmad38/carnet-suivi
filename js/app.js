@@ -6,6 +6,8 @@
 (function () {
   // Le prénom n'est jamais écrit dans le code (dépôt public) : il est lu dans la base, après connexion.
   let PRENOM = window.CARNET_CONFIG.PRENOM || 'l’enfant';
+  // À changer à chaque mise en ligne (même valeur que les ?v= de index.html) : affichée dans Réglages.
+  const APP_VERSION = '2026-09-23b';
   const Store = window.Store;
 
   /* ============================ Référentiels ============================ */
@@ -901,8 +903,13 @@
     });
   }
   async function makePDF(html, { landscape = false } = {}) {
-    await loadScript('js/vendor/html2canvas.min.js');
-    await loadScript('js/vendor/jspdf.umd.min.js');
+    let step = 'chargement de l’outil PDF';
+    try {
+      await loadScript('js/vendor/html2canvas.min.js?v=' + APP_VERSION);
+      await loadScript('js/vendor/jspdf.umd.min.js?v=' + APP_VERSION);
+      if (!window.html2canvas || !window.jspdf) throw new Error('outil PDF introuvable');
+    } catch (err) { err.step = step; throw err; }
+    step = 'mise en page';
     const pageW = landscape ? 297 : 210, pageH = landscape ? 210 : 297, margin = landscape ? 10 : 12;
     const contentW = pageW - 2 * margin, contentH = pageH - 2 * margin;
     const area = $('#printArea');
@@ -926,6 +933,7 @@
         pages.push([from, Math.ceil(to)]);
         from = Math.ceil(to);
       }
+      step = 'dessin des pages';
       const pdf = new window.jspdf.jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
       for (let i = 0; i < pages.length; i++) {
         const [from, to] = pages[i];
@@ -933,7 +941,11 @@
         if (i) pdf.addPage();
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, (to - from) / pxPerMm);
       }
+      step = 'fabrication du fichier';
       return pdf.output('blob');
+    } catch (err) {
+      err.step = err.step || step;
+      throw err;
     } finally {
       area.hidden = true;
       area.innerHTML = '';
@@ -956,7 +968,10 @@
         </div>`);
       if (canShare) $('#pdfShare', form).onclick = () => navigator.share({ files: [file], title: filename }).catch(err => { if (err.name !== 'AbortError') toast('Partage impossible : ' + err.message); });
     } catch (err) {
-      toast('PDF impossible : ' + err.message);
+      // Message affiché en entier (et non dans un bandeau qui disparaît) pour pouvoir le transmettre.
+      openModal('PDF impossible', `<div class="alert">La création du PDF a échoué à l’étape « ${esc(err.step || '?')} ».</div>
+        <p class="small">Détail technique : <code>${esc(err && (err.message || err.name || String(err)))}</code></p>
+        <p class="small muted">Version ${APP_VERSION} · ${esc(navigator.userAgent)}</p>`);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = label; }
     }
@@ -1073,6 +1088,7 @@
         </section>
         <section class="card">
           <h3>Sauvegarde</h3>
+          <p class="muted small">Version du carnet : <b>${APP_VERSION}</b></p>
           <p class="muted small">Télécharge une copie complète du carnet (fichier JSON) à garder en lieu sûr.</p>
           <button class="btn" id="export">Télécharger une sauvegarde</button>
         </section>
