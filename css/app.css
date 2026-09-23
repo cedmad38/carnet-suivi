@@ -100,7 +100,9 @@ input:focus, select:focus, textarea:focus, .btn:focus-visible, .chip:focus-visib
   outline: 2px solid var(--primary); outline-offset: 1px;
 }
 .fields { display: grid; gap: 14px; }
-.fields.two { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.fields.two { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.fields > *, .fields input { min-width: 0; max-width: 100%; }
+input[type=date], input[type=time] { -webkit-appearance: none; appearance: none; display: block; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip {

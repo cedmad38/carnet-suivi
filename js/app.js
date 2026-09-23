@@ -915,7 +915,8 @@
       const box = area.getBoundingClientRect();
       const pxPerMm = box.width / contentW, sliceH = contentH * pxPerMm, total = area.scrollHeight;
       // Coupures de page sur des bords d'éléments (lignes de tableau, cartes…) pour ne rien couper en deux.
-      const cuts = $$('tr, .card, .stats, h1, h2, h3, p, .entry, .chrono, table, .tla > div', area)
+      // (jamais juste après un titre, qui resterait seul en bas de page)
+      const cuts = $$('tr, .card, .stats, p, .entry, .chrono, table, .tla > div', area)
         .map(e => e.getBoundingClientRect().bottom - box.top).filter(v => v > 0).sort((a, b) => a - b);
       const pages = [];
       for (let from = 0; from < total - 2;) {
@@ -928,7 +929,7 @@
       const pdf = new window.jspdf.jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
       for (let i = 0; i < pages.length; i++) {
         const [from, to] = pages[i];
-        const canvas = await window.html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, y: from, height: to - from, windowWidth: Math.max(window.innerWidth, 1024) });
+        const canvas = await window.html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, y: from, height: to - from });
         if (i) pdf.addPage();
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, (to - from) / pxPerMm);
       }
