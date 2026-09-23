@@ -836,7 +836,7 @@
 
         <section class="card">
           <h3>Détail chronologique des épisodes</h3>
-          ${b.eps.length ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Contexte</th><th>Signes</th><th>Mesures</th><th>Effet</th><th>Notes</th></tr></thead><tbody>
+          ${b.eps.length && forPrint ? chronoList(b.eps) : b.eps.length ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Contexte</th><th>Signes</th><th>Mesures</th><th>Effet</th><th>Notes</th></tr></thead><tbody>
           ${[...b.eps].reverse().map(e => { const d = e.data; return `<tr>
             <td>${fmtDate(e.date)}${d.heure ? '<br>' + esc(d.heure) : ''}</td><td>${esc(label(EP_TYPES, d.type))}</td>
             <td>${esc([...(d.contexte || []), d.contexteTxt].filter(Boolean).join(', '))}</td><td>${esc((d.signes || []).join(', '))}</td>
@@ -846,6 +846,24 @@
         </section>
         ${forPrint ? `<p class="small muted">Document généré le ${fmtDate(todayISO(), true)} à partir du carnet de suivi partagé.</p>` : ''}
       </div>`;
+  }
+  // Version PDF : une ligne de titre + une ligne de détails par épisode (un tableau à 7 colonnes serait illisible en A4).
+  function chronoList(eps) {
+    return [...eps].reverse().map(e => {
+      const d = e.data;
+      const bits = [
+        [...(d.contexte || []), d.contexteTxt].filter(Boolean).length && '<b>Contexte :</b> ' + esc([...(d.contexte || []), d.contexteTxt].filter(Boolean).join(', ')),
+        d.signes?.length && '<b>Signes :</b> ' + esc(d.signes.join(', ')),
+        d.mesures?.length && '<b>Mesures :</b> ' + esc(d.mesures.join(', ')),
+        d.montre?.length && '<b>Planche :</b> ' + esc(d.montre.join(', ')),
+      ].filter(Boolean);
+      const effet = [label(EFFECTS, d.effet), d.delai && `en ${d.delai} min`, d.evitee === 'oui' && 'crise évitée', d.evitee === 'non' && 'crise non évitée'].filter(Boolean).join(', ');
+      return `<div class="chrono">
+        <div><b>${fmtDate(e.date)}${d.heure ? ' · ' + esc(d.heure) : ''} — ${esc(label(EP_TYPES, d.type))}</b>${effet ? ' — ' + esc(effet) : ''} <span class="muted">(${esc(author(e.created_by))})</span></div>
+        ${bits.length ? `<div>${bits.join(' · ')}</div>` : ''}
+        ${d.notes ? `<div class="muted">${esc(d.notes)}</div>` : ''}
+      </div>`;
+    }).join('');
   }
   function viewBilan() {
     const b = computeBilan(S.bilanFrom, S.bilanTo);
@@ -867,22 +885,80 @@
     $$('[data-range]').forEach(btn => btn.onclick = () => { S.bilanTo = todayISO(); S.bilanFrom = addDays(S.bilanTo, -(+btn.dataset.range - 1)); renderMain(); });
     $('#bFrom').onchange = e => { if (e.target.value) { S.bilanFrom = e.target.value; renderMain(); } };
     $('#bTo').onchange = e => { if (e.target.value) { S.bilanTo = e.target.value; renderMain(); } };
-    $('#print').onclick = () => printHTML(bilanHTML(b, true));
+    $('#print').onclick = ev => exportPDF(ev.currentTarget, bilanHTML(b, true), `bilan-suivi-${S.bilanFrom}_${S.bilanTo}.pdf`);
     $$('#main [data-edit], #main [data-followup]').forEach(x => x.classList.add('no-print'));
     bindEntryButtons($('#main'));
   }
-  async function printHTML(html, { landscape = false } = {}) {
+  /* ============================ PDF ============================ */
+  // window.print() ne fait rien dans une app posée sur l'écran d'accueil d'un iPhone :
+  // on fabrique donc un vrai PDF, puis on le propose au partage (Imprimer, Fichiers, Mail…).
+  function loadScript(src) {
+    return new Promise((ok, ko) => {
+      if (document.querySelector(`script[src="${src}"]`)) return ok();
+      const el = document.createElement('script');
+      el.src = src; el.onload = ok; el.onerror = () => ko(new Error('Chargement de l’outil PDF impossible (connexion internet ?).'));
+      document.head.appendChild(el);
+    });
+  }
+  async function makePDF(html, { landscape = false } = {}) {
+    await loadScript('js/vendor/html2canvas.min.js');
+    await loadScript('js/vendor/jspdf.umd.min.js');
+    const pageW = landscape ? 297 : 210, pageH = landscape ? 210 : 297, margin = landscape ? 10 : 12;
+    const contentW = pageW - 2 * margin, contentH = pageH - 2 * margin;
     const area = $('#printArea');
+    area.style.width = contentW + 'mm';
     area.innerHTML = html;
     $$('button', area).forEach(b => b.remove());
-    // Attendre le chargement des pictogrammes avant d'ouvrir l'impression.
-    await Promise.all($$('img', area).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
-    document.body.classList.add('printing');
-    let page = null;
-    if (landscape) { page = document.createElement('style'); page.textContent = '@page { size: A4 landscape; margin: 10mm; }'; document.head.appendChild(page); }
-    const done = () => { document.body.classList.remove('printing'); area.innerHTML = ''; page?.remove(); window.removeEventListener('afterprint', done); };
-    window.addEventListener('afterprint', done);
-    setTimeout(() => window.print(), 50);
+    area.hidden = false;
+    try {
+      await Promise.all($$('img', area).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
+      const box = area.getBoundingClientRect();
+      const pxPerMm = box.width / contentW, sliceH = contentH * pxPerMm, total = area.scrollHeight;
+      // Coupures de page sur des bords d'éléments (lignes de tableau, cartes…) pour ne rien couper en deux.
+      const cuts = $$('tr, .card, .stats, h1, h2, h3, p, .entry, .chrono, table, .tla > div', area)
+        .map(e => e.getBoundingClientRect().bottom - box.top).filter(v => v > 0).sort((a, b) => a - b);
+      const pages = [];
+      for (let from = 0; from < total - 2;) {
+        let to = from + sliceH;
+        if (to < total) { const ok = cuts.filter(v => v > from + sliceH * 0.4 && v <= to); if (ok.length) to = ok[ok.length - 1]; }
+        else to = total;
+        pages.push([from, Math.ceil(to)]);
+        from = Math.ceil(to);
+      }
+      const pdf = new window.jspdf.jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+      for (let i = 0; i < pages.length; i++) {
+        const [from, to] = pages[i];
+        const canvas = await window.html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, y: from, height: to - from, windowWidth: Math.max(window.innerWidth, 1024) });
+        if (i) pdf.addPage();
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, (to - from) / pxPerMm);
+      }
+      return pdf.output('blob');
+    } finally {
+      area.hidden = true;
+      area.innerHTML = '';
+    }
+  }
+  async function exportPDF(btn, html, filename, opts) {
+    const label = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = 'Création du PDF…'; }
+    try {
+      const blob = await makePDF(html, opts);
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+      const form = openModal('PDF prêt', `
+        <p>${canShare ? 'Touche <b>Partager ou imprimer</b> : tu pourras choisir <b>Imprimer</b>, <b>Enregistrer dans Fichiers</b>, Mail, WhatsApp…' : 'Ouvre ou télécharge le PDF, puis imprime-le ou envoie-le.'}</p>
+        <div class="row">
+          ${canShare ? '<button type="button" class="btn primary" id="pdfShare">Partager ou imprimer</button>' : ''}
+          <a class="btn${canShare ? '' : ' primary'}" href="${url}" target="_blank" rel="noopener">Ouvrir le PDF</a>
+          <a class="btn" href="${url}" download="${esc(filename)}">Télécharger</a>
+        </div>`);
+      if (canShare) $('#pdfShare', form).onclick = () => navigator.share({ files: [file], title: filename }).catch(err => { if (err.name !== 'AbortError') toast('Partage impossible : ' + err.message); });
+    } catch (err) {
+      toast('PDF impossible : ' + err.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+    }
   }
 
   /* ======================= PICTOGRAMMES ARASAAC ======================= */
@@ -1030,7 +1106,7 @@
       if (v) adminAction(() => Store.rename(S.user.id, v), 'Nom modifié');
     };
     $$('[data-picto]').forEach(b => b.onclick = () => { const [key, lab] = tlaRows()[+b.dataset.picto]; openPictoPicker(key, lab); });
-    $('#printTla').onclick = () => {
+    $('#printTla').onclick = ev => {
       const sad = '<svg class="sad" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="7"/><circle cx="35" cy="40" r="6" fill="currentColor"/><circle cx="65" cy="40" r="6" fill="currentColor"/><path d="M30 74 Q50 56 70 74" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg>';
       const cell = ([key, lab]) => {
         const id = pictos()[key];
@@ -1040,8 +1116,8 @@
       // « Ça ne va pas » en première case de la dernière ligne, comme sur la planche originale.
       const rows = tlaRows().slice(1);
       rows.splice(Math.max(0, rows.length - 3), 0, tlaRows()[0]);
-      printHTML(`<h1 class="tla-title">De quoi ai-je besoin ?</h1><div class="tla">${rows.map(cell).join('')}</div>
-        <p class="tla-credit">${esc(ARASAAC_CREDIT)}</p>`, { landscape: true });
+      exportPDF(ev.currentTarget, `<h1 class="tla-title">De quoi ai-je besoin ?</h1><div class="tla">${rows.map(cell).join('')}</div>
+        <p class="tla-credit">${esc(ARASAAC_CREDIT)}</p>`, 'planche-de-quoi-ai-je-besoin.pdf', { landscape: true });
     };
     if (S.settings.planche) Store.docUrl(S.settings.planche.path).then(url => {
       const box = $('#plancheBox');
